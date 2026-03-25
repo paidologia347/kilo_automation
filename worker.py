@@ -12,8 +12,8 @@ MAX_RETRIES = 2
 
 
 def process_prompt(prompt):
-    attempt = 0
-    while attempt <= MAX_RETRIES:
+    max_attempts = MAX_RETRIES + 1
+    for attempt in range(1, max_attempts + 1):
         try:
             output_file = generate(prompt)
             upscaled_file = upscale(output_file)
@@ -22,13 +22,12 @@ def process_prompt(prompt):
             logger.info("Task succeeded for prompt: %s", prompt)
             return True
         except Exception as error:
-            attempt += 1
-            if attempt <= MAX_RETRIES:
+            if attempt < max_attempts:
                 logger.warning(
                     "Task failed for prompt '%s' (attempt %s/%s): %s",
                     prompt,
                     attempt,
-                    MAX_RETRIES,
+                    max_attempts,
                     error,
                 )
             else:
