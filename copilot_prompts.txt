@@ -1,0 +1,1 @@
+Build scalable AI pipeline with multiprocessing, retry, logging, browser automation, SEO metadata, FTP upload.
