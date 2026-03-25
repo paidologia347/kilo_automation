@@ -19,6 +19,18 @@ app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
 
+@app.route("/", methods=["GET"])
+def health():
+    try:
+        logger.info("Health check called")
+        print("GET / -> APP RUNNING")
+        return "APP RUNNING"
+    except Exception as error:
+        logger.exception("Failed processing / request: %s", error)
+        print(f"ERROR in / endpoint: {error}")
+        return jsonify({"error": "internal server error"}), 500
+
+
 @app.route("/run", methods=["POST"])
 def run():
     try:
@@ -29,14 +41,17 @@ def run():
 
         add_tasks(prompts)
         logger.info("Received %s prompts", len(prompts))
+        print(f"POST /run received {len(prompts)} prompts")
         run_workers()
 
         return jsonify({"status": "completed", "queued": len(prompts)})
     except Exception as error:
         logger.exception("Failed processing /run request: %s", error)
+        print(f"ERROR in /run endpoint: {error}")
         return jsonify({"error": "internal server error"}), 500
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
+    print(f"Starting Flask server on 0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port)
