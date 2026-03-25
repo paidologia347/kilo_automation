@@ -6,6 +6,7 @@ SETUP:
 3. install:
 pip install -r requirements.txt
 playwright install
+python app.py
 
 KILOCLOW:
 https://kilo.ai
