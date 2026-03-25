@@ -37,6 +37,12 @@ def process_prompt(prompt):
 
 def run_workers():
     while not task_queue.empty():
-        prompt = task_queue.get()
-        process_prompt(prompt)
-        task_queue.task_done()
+        prompt = None
+        try:
+            prompt = task_queue.get()
+            process_prompt(prompt)
+        except Exception as error:
+            logger.exception("Worker failed processing prompt '%s': %s", prompt, error)
+        finally:
+            if prompt is not None:
+                task_queue.task_done()
