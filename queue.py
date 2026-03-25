@@ -1,9 +1,13 @@
 from collections import deque
+import logging
 from threading import Lock
 
 
 class Empty(Exception):
     pass
+
+
+logger = logging.getLogger(__name__)
 
 
 class TaskQueue:
@@ -37,5 +41,9 @@ task_queue = TaskQueue()
 
 
 def add_tasks(prompts):
-    for prompt in prompts:
-        task_queue.put(prompt)
+    try:
+        for prompt in prompts:
+            task_queue.put(prompt)
+    except Exception as error:
+        logger.exception("Failed to add prompts to queue: %s", error)
+        raise
