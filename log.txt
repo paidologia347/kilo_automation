@@ -12,9 +12,3 @@
 2026-03-28 13:18:15,883 - INFO - worker - Processing prompt 2/3
 2026-03-28 13:18:15,884 - INFO - worker - Sleeping 0.00 seconds before next prompt
 2026-03-28 13:18:15,884 - INFO - worker - Processing prompt 3/3
-2026-03-28 16:16:48,907 - INFO - run_pipeline - Pipeline started
-2026-03-28 16:16:48,907 - INFO - run_pipeline - Generated 2 prompts
-2026-03-28 16:16:48,907 - INFO - run_pipeline - Prepared 1 batches with batch size 20
-2026-03-28 16:16:48,907 - INFO - run_pipeline - Processing batch 1/1 with 2 prompts
-2026-03-28 16:16:48,907 - INFO - run_pipeline - Batch 1 completed
-2026-03-28 16:16:48,907 - INFO - run_pipeline - Pipeline finished
