@@ -1,8 +1,9 @@
 import logging
 
 from queue import task_queue
-from utils.browser import generate
-from utils.image_processor import process
+from utils.browser import generate as generate_image
+from utils.metadata import inject_metadata
+from utils.upscale import upscale_image
 
 
 logger = logging.getLogger(__name__)
@@ -10,63 +11,28 @@ MAX_RETRIES = 2
 
 
 def process_prompt(prompt):
-    """Generate an image for *prompt* then run the full post-processing pipeline.
-
-    The browser generation step and the image-processing pipeline are each
-    wrapped in their own retry loop so that a transient failure in either
-    stage does not silently swallow the error.
-
-    Returns ``True`` when both stages complete successfully, ``False`` when
-    all retry attempts are exhausted.
-    """
+    """Generate an image then run upscale and metadata steps with retries."""
     max_attempts = MAX_RETRIES + 1
 
     for attempt in range(1, max_attempts + 1):
         try:
-            # --- Stage 1: render the prompt to an image -------------------
-            generation = generate(prompt)
+            logger.info("Step 1/3: generating image (attempt %s/%s)", attempt, max_attempts)
+            generation = generate_image(prompt)
             image_path = generation["image_path"]
-            logger.info(
-                "Image rendered in %.2fs (attempt %s/%s): %s",
-                generation["render_time"],
-                attempt,
-                max_attempts,
-                image_path,
-            )
-
-            # --- Stage 2: upscale → metadata → upload ---------------------
-            result = process(image_path=image_path, prompt=prompt)
-
-            if result["success"]:
-                logger.info(
-                    "Pipeline complete in %.2fs for prompt: %s",
-                    result["total_time"],
-                    prompt,
-                )
-                return True
-
-            # A pipeline stage failed — log which one and retry.
-            logger.warning(
-                "Pipeline stage '%s' failed for prompt '%s' (attempt %s/%s): %s",
-                result["failed_stage"],
-                prompt,
-                attempt,
-                max_attempts,
-                result["error"],
-            )
-            if attempt == max_attempts:
-                logger.error(
-                    "Task permanently failed at stage '%s' for prompt '%s': %s",
-                    result["failed_stage"],
-                    prompt,
-                    result["error"],
-                )
-                return False
+            logger.info("Step 1/3 complete: image generated at %s", image_path)
+            logger.info("Step 2/3: upscaling image")
+            upscaled_path = upscale_image(image_path)
+            logger.info("Step 2/3 complete: upscaled image at %s", upscaled_path)
+            logger.info("Step 3/3: injecting metadata")
+            final_path = inject_metadata(upscaled_path, prompt)
+            logger.info("Step 3/3 complete: metadata injected into %s", final_path)
+            logger.info("Pipeline complete for prompt: %s", prompt)
+            return True
 
         except Exception as error:
             if attempt < max_attempts:
                 logger.warning(
-                    "Task failed for prompt '%s' (attempt %s/%s): %s",
+                    "Pipeline failed for prompt '%s' (attempt %s/%s): %s",
                     prompt,
                     attempt,
                     max_attempts,
@@ -74,7 +40,7 @@ def process_prompt(prompt):
                 )
             else:
                 logger.error(
-                    "Task permanently failed for prompt '%s': %s", prompt, error
+                    "Pipeline permanently failed for prompt '%s': %s", prompt, error
                 )
                 return False
 
