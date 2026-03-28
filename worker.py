@@ -81,6 +81,9 @@ def process_prompts(prompts: list[str]) -> list[str]:
                     index,
                     len(prompts),
                 )
+                retry_delay = random.uniform(delay_min, delay_max)
+                logger.info("Sleeping %.2f seconds before retry", retry_delay)
+                time.sleep(retry_delay)
         if not succeeded:
             failed_prompts.append(prompt)
 
