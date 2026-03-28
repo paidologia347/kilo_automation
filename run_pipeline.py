@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from config import BATCH_SIZE, LOG_FILE, RETRY
+from config import BATCH_SIZE, LOG_FILE
 from prompt_engine import generate_daily_prompts
 from worker import run_workers
 
@@ -33,26 +33,8 @@ def run_pipeline() -> None:
     for batch_index, batch in enumerate(batches, start=1):
         logger.info("Processing batch %s/%s with %s prompts", batch_index, len(batches), len(batch))
         failed_prompts = run_workers(batch)
-
-        attempt = 1
-        while failed_prompts and attempt <= RETRY:
-            logger.warning(
-                "Retrying %s failed prompts in batch %s (retry %s/%s)",
-                len(failed_prompts),
-                batch_index,
-                attempt,
-                RETRY,
-            )
-            failed_prompts = run_workers(failed_prompts)
-            attempt += 1
-
         if failed_prompts:
-            logger.error(
-                "Batch %s completed with %s unrecovered failures",
-                batch_index,
-                len(failed_prompts),
-            )
-        else:
-            logger.info("Batch %s completed successfully", batch_index)
+            logger.error("Batch %s completed with %s unrecovered failures", batch_index, len(failed_prompts))
+        logger.info("Batch %s completed", batch_index)
 
     logger.info("Pipeline finished")

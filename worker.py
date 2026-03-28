@@ -3,7 +3,7 @@ import random
 import time
 from typing import Optional
 
-from config import DELAY_MAX, DELAY_MIN
+from config import DELAY_MAX, DELAY_MIN, RETRY
 from queue import task_queue
 from utils.browser import generate_image
 from utils.metadata import inject_metadata
@@ -60,7 +60,27 @@ def process_prompts(prompts: list[str]) -> list[str]:
 
     for index, prompt in enumerate(prompts, start=1):
         logger.info("Processing prompt %s/%s", index, len(prompts))
-        succeeded = process_prompt(prompt)
+        attempt = 0
+        succeeded = False
+        max_attempts = RETRY + 1
+
+        while attempt < max_attempts and not succeeded:
+            attempt += 1
+            logger.info(
+                "Prompt attempt %s/%s for prompt %s/%s",
+                attempt,
+                max_attempts,
+                index,
+                len(prompts),
+            )
+            succeeded = process_prompt(prompt)
+            if not succeeded and attempt < max_attempts:
+                logger.warning(
+                    "Prompt attempt %s failed for prompt %s/%s; retrying",
+                    attempt,
+                    index,
+                    len(prompts),
+                )
         if not succeeded:
             failed_prompts.append(prompt)
 
