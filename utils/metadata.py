@@ -13,7 +13,9 @@ def inject_metadata(path: str, prompt: str) -> str:
         exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
         title = f"Generated image for: {prompt}".encode("utf-16le")
         description = f"Automation output prompt: {prompt}".encode("utf-8")
-        keywords = f"generated,image,automation,{prompt}".encode("utf-16le")
+        cleaned_prompt = "".join(ch if ch.isprintable() and ch not in ",;\n\r\t" else " " for ch in prompt)
+        prompt_keyword = " ".join(cleaned_prompt.split())
+        keywords = f"generated,image,automation,{prompt_keyword}".encode("utf-16le")
 
         exif_dict["0th"][piexif.ImageIFD.ImageDescription] = description
         exif_dict["0th"][piexif.ImageIFD.XPTitle] = title
