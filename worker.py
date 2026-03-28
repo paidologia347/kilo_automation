@@ -1,77 +1,91 @@
 import logging
+import random
+import time
+from typing import Optional
 
+from config import DELAY_MAX, DELAY_MIN
 from queue import task_queue
-from utils.browser import generate as generate_image
+from utils.browser import generate_image
 from utils.metadata import inject_metadata
 from utils.upscale import upscale_image
 from utils.uploader import upload_file
 
 
 logger = logging.getLogger(__name__)
-MAX_RETRIES = 2
 
 
-def process_prompt(prompt):
-    """Generate, upscale, inject metadata, then upload with retries."""
-    max_attempts = MAX_RETRIES + 1
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            logger.info("Step 1/4: generating image (attempt %s/%s)", attempt, max_attempts)
-            generation = generate_image(prompt)
-            image_path = generation["image_path"]
-            logger.info("Step 1/4 complete: image generated at %s", image_path)
-            logger.info("Step 2/4: upscaling image")
-            upscaled_path = upscale_image(image_path)
-            logger.info("Step 2/4 complete: upscaled image at %s", upscaled_path)
-            logger.info("Step 3/4: injecting metadata")
-            final_path = inject_metadata(upscaled_path, prompt)
-            logger.info("Step 3/4 complete: metadata injected into %s", final_path)
-            logger.info("Step 4/4: uploading file")
-            uploaded = upload_file(final_path)
-            if not uploaded:
-                if attempt < max_attempts:
-                    logger.warning(
-                        "Step 4/4 failed uploading %s (attempt %s/%s)",
-                        final_path,
-                        attempt,
-                        max_attempts,
-                    )
-                    continue
-                logger.error("Step 4/4 failed uploading %s", final_path)
-                logger.error("Final result: pipeline failed for prompt: %s", prompt)
-                return False
-            logger.info("Step 4/4 complete: uploaded %s", final_path)
-            logger.info("Final result: pipeline complete for prompt: %s", prompt)
-            return True
-
-        except Exception as error:
-            if attempt < max_attempts:
-                logger.warning(
-                    "Pipeline failed for prompt '%s' (attempt %s/%s): %s",
-                    prompt,
-                    attempt,
-                    max_attempts,
-                    error,
-                )
-            else:
-                logger.error(
-                    "Pipeline permanently failed for prompt '%s': %s", prompt, error
-                )
-                logger.error("Final result: pipeline failed for prompt: %s", prompt)
-                return False
-
-    return False
+def _get_delay_bounds() -> tuple[float, float]:
+    if DELAY_MIN > DELAY_MAX:
+        logger.warning(
+            "DELAY_MIN (%s) is greater than DELAY_MAX (%s); swapping values",
+            DELAY_MIN,
+            DELAY_MAX,
+        )
+        return DELAY_MAX, DELAY_MIN
+    return DELAY_MIN, DELAY_MAX
 
 
-def run_workers():
+def process_prompt(prompt: str) -> bool:
+    """Generate, upscale, inject metadata, then upload for a single prompt."""
+    try:
+        logger.info("Prompt start: %s", prompt)
+        logger.info("Step 1/4: generating image")
+        image_path = generate_image(prompt)
+        logger.info("Step 1/4 complete: image generated at %s", image_path)
+        logger.info("Step 2/4: upscaling image")
+        upscaled_path = upscale_image(image_path)
+        logger.info("Step 2/4 complete: upscaled image at %s", upscaled_path)
+        logger.info("Step 3/4: injecting metadata")
+        final_path = inject_metadata(upscaled_path, prompt)
+        logger.info("Step 3/4 complete: metadata injected into %s", final_path)
+        logger.info("Step 4/4: uploading file")
+        uploaded = upload_file(final_path)
+        if not uploaded:
+            logger.error("Step 4/4 failed uploading %s", final_path)
+            logger.error("Prompt failed: %s", prompt)
+            return False
+
+        logger.info("Step 4/4 complete: uploaded %s", final_path)
+        logger.info("Prompt succeeded: %s", prompt)
+        return True
+    except Exception as error:
+        logger.exception("Prompt failed: %s (%s)", prompt, error)
+        return False
+
+
+def process_prompts(prompts: list[str]) -> list[str]:
+    """Run the full pipeline for each prompt and return failed prompts."""
+    failed_prompts = []
+    delay_min, delay_max = _get_delay_bounds()
+
+    for index, prompt in enumerate(prompts, start=1):
+        logger.info("Processing prompt %s/%s", index, len(prompts))
+        succeeded = process_prompt(prompt)
+        if not succeeded:
+            failed_prompts.append(prompt)
+
+        if index < len(prompts):
+            delay_seconds = random.uniform(delay_min, delay_max)
+            logger.info("Sleeping %.2f seconds before next prompt", delay_seconds)
+            time.sleep(delay_seconds)
+
+    return failed_prompts
+
+
+def run_workers(prompts: Optional[list[str]] = None) -> list[str]:
+    if prompts is not None:
+        return process_prompts(prompts)
+
+    queued_prompts = []
     while not task_queue.empty():
         prompt = None
         try:
             prompt = task_queue.get()
-            process_prompt(prompt)
+            queued_prompts.append(prompt)
         except Exception as error:
-            logger.exception("Worker failed processing prompt '%s': %s", prompt, error)
+            logger.exception("Worker failed reading queued prompt '%s': %s", prompt, error)
         finally:
             if prompt is not None:
                 task_queue.task_done()
+
+    return process_prompts(queued_prompts)
