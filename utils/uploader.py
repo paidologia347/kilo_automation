@@ -27,8 +27,6 @@ def upload_file(path: str) -> bool:
             "FTP upload skipped: missing FTP_HOST/FTP_USER/FTP_PASS",
         )
         return False
-    filename = os.path.basename(path)
-
     for attempt in range(1, max_attempts + 1):
         try:
             _dual_log(
@@ -56,6 +54,7 @@ def upload_file(path: str) -> bool:
                     _dual_log(logging.INFO, "Remote folder already exists: %s", folder_name)
                 _dual_log(logging.INFO, "Changing working directory to %s", folder_name)
                 ftp.cwd(folder_name)
+                filename = os.path.basename(path)
                 _dual_log(logging.INFO, "Uploading file in binary mode: %s", filename)
                 with open(path, "rb") as stream:
                     ftp.storbinary(f"STOR {filename}", stream)
