@@ -8,6 +8,13 @@ from run_pipeline import run_pipeline
 app = Flask(__name__)
 
 
+def _run_pipeline_with_logs() -> None:
+    try:
+        run_pipeline()
+    except Exception as error:
+        print("ERROR:", str(error))
+
+
 @app.route("/")
 def home():
     return "OPENCLAW RUNNING"
@@ -15,7 +22,7 @@ def home():
 
 @app.route("/run")
 def run():
-    threading.Thread(target=run_pipeline, daemon=True).start()
+    threading.Thread(target=_run_pipeline_with_logs, daemon=True).start()
     return jsonify({"status": "started"})
 
 

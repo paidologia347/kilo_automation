@@ -24,11 +24,15 @@ def run_pipeline() -> None:
     _setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("Pipeline started")
+    print("PIPELINE START")
+    print("STEP 1: GENERATE")
 
     prompts = generate_daily_prompts()
     logger.info("Generated %s prompts", len(prompts))
+    print("STEP 2: PROCESS")
     batches = _chunk_prompts(prompts, BATCH_SIZE)
     logger.info("Prepared %s batches with batch size %s", len(batches), BATCH_SIZE)
+    print("STEP 3: UPLOAD")
 
     for batch_index, batch in enumerate(batches, start=1):
         logger.info("Processing batch %s/%s with %s prompts", batch_index, len(batches), len(batch))
