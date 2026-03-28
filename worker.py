@@ -1,10 +1,9 @@
 import logging
 import random
 import time
-from pathlib import Path
 from typing import Optional
 
-from config import DELAY_MAX, DELAY_MIN, RETRY
+from config import DELAY_MAX, DELAY_MIN, RETRY, UPLOAD_DELAY_SECONDS, UPLOAD_RETRY_ATTEMPTS
 from queue import task_queue
 from utils.browser import generate_image
 from utils.metadata import inject_metadata
@@ -13,9 +12,6 @@ from utils.uploader import upload_file
 
 
 logger = logging.getLogger(__name__)
-SUPPORTED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
-UPLOAD_RETRY_ATTEMPTS = 2
-UPLOAD_DELAY_SECONDS = 5
 
 
 def _get_delay_bounds() -> tuple[float, float]:
@@ -27,23 +23,6 @@ def _get_delay_bounds() -> tuple[float, float]:
         )
         return DELAY_MAX, DELAY_MIN
     return DELAY_MIN, DELAY_MAX
-
-
-def _validate_image_path(path: str) -> bool:
-    if not path:
-        logger.error("Upload skipped: empty image path")
-        return False
-    image_path = Path(path)
-    if not image_path.exists():
-        logger.error("Upload skipped: image path missing: %s", path)
-        return False
-    if not image_path.is_file():
-        logger.error("Upload skipped: image path is not a file: %s", path)
-        return False
-    if image_path.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES:
-        logger.error("Upload skipped: unsupported image format %s", image_path.suffix)
-        return False
-    return True
 
 
 def process_prompt(prompt: str) -> bool:
@@ -59,27 +38,18 @@ def process_prompt(prompt: str) -> bool:
         logger.info("Step 3/4: injecting metadata")
         final_path = inject_metadata(upscaled_path, prompt)
         logger.info("Step 3/4 complete: metadata injected into %s", final_path)
-        if not _validate_image_path(final_path):
-            logger.error("Step 4/4 skipped: invalid image path %s", final_path)
-            logger.error("Prompt failed: %s", prompt)
-            return False
-        logger.info("Step 4/4: waiting %s seconds before upload", UPLOAD_DELAY_SECONDS)
-        time.sleep(UPLOAD_DELAY_SECONDS)
+        delay_seconds = UPLOAD_DELAY_SECONDS
+        if delay_seconds < 0:
+            logger.warning(
+                "UPLOAD_DELAY_SECONDS was negative (%s); treating as 0",
+                delay_seconds,
+            )
+            delay_seconds = 0
+        if delay_seconds > 0:
+            logger.info("Step 4/4: waiting %s seconds before upload", delay_seconds)
+            time.sleep(delay_seconds)
         logger.info("Step 4/4: uploading file")
-        uploaded = False
-        max_upload_attempts = UPLOAD_RETRY_ATTEMPTS + 1
-        for attempt in range(1, max_upload_attempts + 1):
-            uploaded = upload_file(final_path)
-            if uploaded:
-                break
-            if attempt < max_upload_attempts:
-                logger.warning(
-                    "Upload attempt %s/%s failed; retrying after %s seconds",
-                    attempt,
-                    max_upload_attempts,
-                    UPLOAD_DELAY_SECONDS,
-                )
-                time.sleep(UPLOAD_DELAY_SECONDS)
+        uploaded = upload_file(final_path, max_retries=UPLOAD_RETRY_ATTEMPTS)
         if not uploaded:
             logger.error("Step 4/4 failed uploading %s", final_path)
             logger.error("Prompt failed: %s", prompt)

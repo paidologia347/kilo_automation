@@ -42,12 +42,19 @@ def _validate_file_path(path: str) -> Optional[Path]:
     return file_path
 
 
-def upload_file(path: str) -> bool:
+def upload_file(path: str, max_retries: int = MAX_RETRIES) -> bool:
+    if max_retries < 0:
+        _dual_log(
+            logging.WARNING,
+            "FTP upload retry count was negative (%s); clamping to 0",
+            max_retries,
+        )
+        max_retries = 0
     host = os.getenv("FTP_HOST")
     username = os.getenv("FTP_USER")
     password = os.getenv("FTP_PASS")
     folder_name = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    max_attempts = MAX_RETRIES + 1
+    max_attempts = max_retries + 1
     file_path = _validate_file_path(path)
     if file_path is None:
         return False
@@ -94,7 +101,7 @@ def upload_file(path: str) -> bool:
                     "Uploaded file to FTP (%s/%s): %s",
                     folder_name,
                     filename,
-                    file_path,
+                    str(file_path),
                 )
             _dual_log(logging.INFO, "FTP connection closed successfully")
             return True
