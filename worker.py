@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 def _get_delay_bounds() -> tuple[float, float]:
     if DELAY_MIN > DELAY_MAX:
+        logger.warning(
+            "DELAY_MIN (%s) is greater than DELAY_MAX (%s); swapping values",
+            DELAY_MIN,
+            DELAY_MAX,
+        )
         return DELAY_MAX, DELAY_MIN
     return DELAY_MIN, DELAY_MAX
 
