@@ -4,6 +4,7 @@ from queue import task_queue
 from utils.browser import generate as generate_image
 from utils.metadata import inject_metadata
 from utils.upscale import upscale_image
+from utils.uploader import upload_file
 
 
 logger = logging.getLogger(__name__)
@@ -11,22 +12,27 @@ MAX_RETRIES = 2
 
 
 def process_prompt(prompt):
-    """Generate an image then run upscale and metadata steps with retries."""
+    """Generate, upscale, inject metadata, then upload with retries."""
     max_attempts = MAX_RETRIES + 1
 
     for attempt in range(1, max_attempts + 1):
         try:
-            logger.info("Step 1/3: generating image (attempt %s/%s)", attempt, max_attempts)
+            logger.info("Step 1/4: generating image (attempt %s/%s)", attempt, max_attempts)
             generation = generate_image(prompt)
             image_path = generation["image_path"]
-            logger.info("Step 1/3 complete: image generated at %s", image_path)
-            logger.info("Step 2/3: upscaling image")
+            logger.info("Step 1/4 complete: image generated at %s", image_path)
+            logger.info("Step 2/4: upscaling image")
             upscaled_path = upscale_image(image_path)
-            logger.info("Step 2/3 complete: upscaled image at %s", upscaled_path)
-            logger.info("Step 3/3: injecting metadata")
+            logger.info("Step 2/4 complete: upscaled image at %s", upscaled_path)
+            logger.info("Step 3/4: injecting metadata")
             final_path = inject_metadata(upscaled_path, prompt)
-            logger.info("Step 3/3 complete: metadata injected into %s", final_path)
-            logger.info("Pipeline complete for prompt: %s", prompt)
+            logger.info("Step 3/4 complete: metadata injected into %s", final_path)
+            logger.info("Step 4/4: uploading file")
+            uploaded = upload_file(final_path)
+            if not uploaded:
+                raise RuntimeError(f"Upload failed for {final_path}")
+            logger.info("Step 4/4 complete: uploaded %s", final_path)
+            logger.info("Final result: pipeline complete for prompt: %s", prompt)
             return True
 
         except Exception as error:
@@ -42,6 +48,7 @@ def process_prompt(prompt):
                 logger.error(
                     "Pipeline permanently failed for prompt '%s': %s", prompt, error
                 )
+                logger.error("Final result: pipeline failed for prompt: %s", prompt)
                 return False
 
     return False
