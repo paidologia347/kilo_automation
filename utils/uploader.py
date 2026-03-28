@@ -33,7 +33,6 @@ def upload_file(path: str) -> bool:
         return False
 
     for attempt in range(1, max_attempts + 1):
-        ftp = None
         try:
             _dual_log(
                 logging.INFO,
@@ -43,34 +42,35 @@ def upload_file(path: str) -> bool:
                 path,
             )
             _dual_log(logging.INFO, "Connecting to FTP host")
-            ftp = FTP(host, timeout=30)
-            _dual_log(logging.INFO, "Logging in to FTP server")
-            ftp.login(user=username, passwd=password)
-            _dual_log(logging.INFO, "Ensuring remote folder exists: %s", folder_name)
-            try:
-                ftp.mkd(folder_name)
-                _dual_log(logging.INFO, "Created remote folder: %s", folder_name)
-            except error_perm as folder_error:
-                message = str(folder_error).lower()
-                folder_exists_error = message.startswith("550") and (
-                    "exist" in message or "already" in message
+            with FTP(host, timeout=30) as ftp:
+                _dual_log(logging.INFO, "Logging in to FTP server")
+                ftp.login(user=username, passwd=password)
+                _dual_log(logging.INFO, "Ensuring remote folder exists: %s", folder_name)
+                try:
+                    ftp.mkd(folder_name)
+                    _dual_log(logging.INFO, "Created remote folder: %s", folder_name)
+                except error_perm as folder_error:
+                    message = str(folder_error).lower()
+                    folder_exists_error = message.startswith("550") and (
+                        "exist" in message or "already" in message
+                    )
+                    if not folder_exists_error:
+                        raise
+                    _dual_log(logging.INFO, "Remote folder already exists: %s", folder_name)
+                _dual_log(logging.INFO, "Changing working directory to %s", folder_name)
+                ftp.cwd(folder_name)
+                filename = os.path.basename(path)
+                _dual_log(logging.INFO, "Uploading file in binary mode: %s", filename)
+                with open(path, "rb") as stream:
+                    ftp.storbinary(f"STOR {filename}", stream)
+                _dual_log(
+                    logging.INFO,
+                    "Uploaded file to FTP (%s/%s): %s",
+                    folder_name,
+                    filename,
+                    path,
                 )
-                if not folder_exists_error:
-                    raise
-                _dual_log(logging.INFO, "Remote folder already exists: %s", folder_name)
-            _dual_log(logging.INFO, "Changing working directory to %s", folder_name)
-            ftp.cwd(folder_name)
-            filename = os.path.basename(path)
-            _dual_log(logging.INFO, "Uploading file in binary mode: %s", filename)
-            with open(path, "rb") as stream:
-                ftp.storbinary(f"STOR {filename}", stream)
-            _dual_log(
-                logging.INFO,
-                "Uploaded file to FTP (%s/%s): %s",
-                folder_name,
-                filename,
-                path,
-            )
+            _dual_log(logging.INFO, "Closed FTP connection")
             return True
         except Exception as error:
             if attempt < max_attempts:
@@ -91,18 +91,6 @@ def upload_file(path: str) -> bool:
                     error,
                 )
                 return False
-        finally:
-            if ftp is not None:
-                try:
-                    ftp.quit()
-                    _dual_log(logging.INFO, "Closed FTP connection")
-                except Exception as quit_error:
-                    _dual_log(logging.DEBUG, "FTP quit failed: %s", quit_error)
-                    try:
-                        ftp.close()
-                        _dual_log(logging.DEBUG, "FTP connection closed with close()")
-                    except Exception as close_error:
-                        _dual_log(logging.DEBUG, "FTP close failed: %s", close_error)
 
     return False
 
