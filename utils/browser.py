@@ -20,7 +20,19 @@ GENERATE_BUTTON_SELECTOR = os.getenv(
 GENERATED_IMAGE_SELECTOR = os.getenv("GENERATED_IMAGE_SELECTOR", "img.generated-image")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/output")
 MAX_RETRIES = 2
+RANDOM_DELAY_MIN = float(os.getenv("RANDOM_DELAY_MIN", "5"))
+RANDOM_DELAY_MAX = float(os.getenv("RANDOM_DELAY_MAX", "10"))
 TIMEOUT_MS = 60_000
+_VIEWPORT_WIDTH = 1024
+_VIEWPORT_HEIGHT = 1024
+
+
+def _get_random_delay_bounds() -> tuple[float, float]:
+    delay_min = RANDOM_DELAY_MIN
+    delay_max = RANDOM_DELAY_MAX
+    if delay_min > delay_max:
+        delay_min, delay_max = delay_max, delay_min
+    return delay_min, delay_max
 
 
 def _load_cookies(context) -> None:
@@ -42,42 +54,46 @@ def generate_image(prompt: str) -> str:
     """Generate an image for *prompt* using a Playwright browser session."""
     output_dir = Path(OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
+    total_attempts = MAX_RETRIES + 1
 
-    for attempt in range(1, MAX_RETRIES + 2):
-        print(f"[browser] starting generation attempt {attempt}/{MAX_RETRIES + 1}")
+    for attempt in range(1, total_attempts + 1):
+        output_path = output_dir / f"generated_{uuid4().hex}.png"
+        print(f"[browser] starting generation attempt {attempt}/{total_attempts}")
         try:
-            output_path = output_dir / f"generated_{uuid4().hex}.png"
-
             with sync_playwright() as playwright:
                 print("[browser] launching headless Chromium")
                 browser = playwright.chromium.launch(headless=True)
-                context = browser.new_context(accept_downloads=True)
-                _load_cookies(context)
+                context = None
+                try:
+                    context = browser.new_context(accept_downloads=True)
+                    _load_cookies(context)
 
-                page = context.new_page()
-                print(f"[browser] opening generator website: {IMAGE_GENERATOR_URL}")
-                page.goto(IMAGE_GENERATOR_URL, wait_until="networkidle", timeout=TIMEOUT_MS)
+                    page = context.new_page()
+                    print(f"[browser] opening generator website: {IMAGE_GENERATOR_URL}")
+                    page.goto(IMAGE_GENERATOR_URL, wait_until="domcontentloaded", timeout=TIMEOUT_MS)
 
-                print(f"[browser] filling prompt input: {PROMPT_INPUT_SELECTOR}")
-                page.fill(PROMPT_INPUT_SELECTOR, prompt, timeout=TIMEOUT_MS)
+                    print(f"[browser] filling prompt input: {PROMPT_INPUT_SELECTOR}")
+                    page.fill(PROMPT_INPUT_SELECTOR, prompt, timeout=TIMEOUT_MS)
 
-                print(f"[browser] clicking generate button: {GENERATE_BUTTON_SELECTOR}")
-                page.click(GENERATE_BUTTON_SELECTOR, timeout=TIMEOUT_MS)
+                    print(f"[browser] clicking generate button: {GENERATE_BUTTON_SELECTOR}")
+                    page.click(GENERATE_BUTTON_SELECTOR, timeout=TIMEOUT_MS)
 
-                delay = random.uniform(5, 10)
-                print(f"[browser] waiting random delay: {delay:.2f}s")
-                time.sleep(delay)
+                    delay_min, delay_max = _get_random_delay_bounds()
+                    delay = random.uniform(delay_min, delay_max)
+                    print(f"[browser] waiting random delay: {delay:.2f}s")
+                    time.sleep(delay)
 
-                print(f"[browser] waiting for generated image: {GENERATED_IMAGE_SELECTOR}")
-                image = page.locator(GENERATED_IMAGE_SELECTOR).first
-                image.wait_for(state="visible", timeout=TIMEOUT_MS)
+                    print(f"[browser] waiting for generated image: {GENERATED_IMAGE_SELECTOR}")
+                    image = page.locator(GENERATED_IMAGE_SELECTOR).first
+                    image.wait_for(state="visible", timeout=TIMEOUT_MS)
 
-                print(f"[browser] saving generated image to {output_path}")
-                image_bytes = image.screenshot()
-                output_path.write_bytes(image_bytes)
-
-                context.close()
-                browser.close()
+                    print(f"[browser] saving generated image to {output_path}")
+                    image_bytes = image.screenshot()
+                    output_path.write_bytes(image_bytes)
+                finally:
+                    if context is not None:
+                        context.close()
+                    browser.close()
 
             logger.info("Image generated for prompt %r: %s", prompt, output_path)
             print(f"[browser] generation complete: {output_path}")
@@ -85,10 +101,10 @@ def generate_image(prompt: str) -> str:
         except Exception as error:
             logger.exception("Image generation attempt %s failed: %s", attempt, error)
             print(f"[browser] attempt {attempt} failed: {error}")
-            if attempt > MAX_RETRIES:
+            if output_path.exists():
+                output_path.unlink(missing_ok=True)
+            if attempt == total_attempts:
                 raise
-
-    raise RuntimeError("Image generation failed after all retry attempts")
 
 
 def generate(prompt: str) -> dict:
@@ -98,7 +114,7 @@ def generate(prompt: str) -> dict:
     return {
         "image_path": image_path,
         "prompt": prompt,
-        "width": None,
-        "height": None,
+        "width": _VIEWPORT_WIDTH,
+        "height": _VIEWPORT_HEIGHT,
         "render_time": time.monotonic() - start,
     }
