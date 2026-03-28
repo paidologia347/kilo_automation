@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from ftplib import FTP, error_perm
 
 
@@ -8,35 +8,47 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 2
 
 
+def _log_with_print(level: int, message: str, *args: object) -> None:
+    logger.log(level, message, *args)
+    try:
+        formatted = message % args if args else message
+    except TypeError:
+        formatted = message
+    print(f"[uploader] {formatted}")
+
+
 def upload_file(path: str) -> bool:
     host = os.getenv("FTP_HOST")
     username = os.getenv("FTP_USER")
     password = os.getenv("FTP_PASS")
-    folder_name = datetime.now().strftime("%Y-%m-%d")
+    folder_name = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     max_attempts = MAX_RETRIES + 1
 
     if not host or not username or not password:
-        logger.error("FTP upload skipped: missing FTP_HOST/FTP_USER/FTP_PASS")
-        print("[uploader] FTP upload skipped: missing FTP_HOST/FTP_USER/FTP_PASS")
+        _log_with_print(
+            logging.ERROR,
+            "FTP upload skipped: missing FTP_HOST/FTP_USER/FTP_PASS",
+        )
         return False
 
     for attempt in range(1, max_attempts + 1):
         ftp = None
         try:
-            logger.info("FTP upload attempt %s/%s for %s", attempt, max_attempts, path)
-            print(f"[uploader] FTP upload attempt {attempt}/{max_attempts} for {path}")
-            logger.info("Connecting to FTP host")
-            print("[uploader] Connecting to FTP host")
+            _log_with_print(
+                logging.INFO,
+                "FTP upload attempt %s/%s for %s",
+                attempt,
+                max_attempts,
+                path,
+            )
+            _log_with_print(logging.INFO, "Connecting to FTP host")
             ftp = FTP(host, timeout=30)
-            logger.info("Logging in to FTP server")
-            print("[uploader] Logging in to FTP server")
+            _log_with_print(logging.INFO, "Logging in to FTP server")
             ftp.login(user=username, passwd=password)
-            logger.info("Ensuring remote folder exists: %s", folder_name)
-            print(f"[uploader] Ensuring remote folder exists: {folder_name}")
+            _log_with_print(logging.INFO, "Ensuring remote folder exists: %s", folder_name)
             try:
                 ftp.mkd(folder_name)
-                logger.info("Created remote folder: %s", folder_name)
-                print(f"[uploader] Created remote folder: {folder_name}")
+                _log_with_print(logging.INFO, "Created remote folder: %s", folder_name)
             except error_perm as folder_error:
                 message = str(folder_error).lower()
                 folder_exists_error = message.startswith("550") and (
@@ -44,34 +56,25 @@ def upload_file(path: str) -> bool:
                 )
                 if not folder_exists_error:
                     raise
-                logger.info("Remote folder already exists: %s", folder_name)
-                print(f"[uploader] Remote folder already exists: {folder_name}")
-            logger.info("Changing working directory to %s", folder_name)
-            print(f"[uploader] Changing working directory to {folder_name}")
+                _log_with_print(logging.INFO, "Remote folder already exists: %s", folder_name)
+            _log_with_print(logging.INFO, "Changing working directory to %s", folder_name)
             ftp.cwd(folder_name)
             filename = os.path.basename(path)
-            logger.info("Uploading file in binary mode: %s", filename)
-            print(f"[uploader] Uploading file in binary mode: {filename}")
+            _log_with_print(logging.INFO, "Uploading file in binary mode: %s", filename)
             with open(path, "rb") as stream:
                 ftp.storbinary(f"STOR {filename}", stream)
-            logger.info(
+            _log_with_print(
+                logging.INFO,
                 "Uploaded file to FTP (%s/%s): %s",
                 folder_name,
-                os.path.basename(path),
+                filename,
                 path,
             )
-            print(f"[uploader] Uploaded file to FTP ({folder_name}/{filename}): {path}")
-            logger.info("Closing FTP connection")
-            print("[uploader] Closing FTP connection")
-            try:
-                ftp.quit()
-            except Exception as close_error:
-                logger.warning("FTP quit failed: %s", close_error)
-                print(f"[uploader] FTP quit failed: {close_error}")
             return True
         except Exception as error:
             if attempt < max_attempts:
-                logger.warning(
+                _log_with_print(
+                    logging.WARNING,
                     "FTP upload failed for %s (attempt %s/%s): %s",
                     path,
                     attempt,
@@ -79,23 +82,24 @@ def upload_file(path: str) -> bool:
                     error,
                 )
             else:
-                logger.error(
+                _log_with_print(
+                    logging.ERROR,
                     "FTP upload permanently failed for %s after %s attempts: %s",
                     path,
                     max_attempts,
                     error,
                 )
-                print(
-                    "[uploader] FTP upload permanently failed for "
-                    f"{path} after {max_attempts} attempts: {error}"
-                )
                 return False
         finally:
             if ftp is not None:
                 try:
-                    ftp.close()
+                    _log_with_print(logging.INFO, "Closing FTP connection")
+                    ftp.quit()
                 except Exception:
-                    pass
+                    try:
+                        ftp.close()
+                    except Exception:
+                        pass
 
     return False
 
