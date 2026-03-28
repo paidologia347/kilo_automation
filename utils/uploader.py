@@ -94,12 +94,13 @@ def upload_file(path: str) -> bool:
         finally:
             if ftp is not None:
                 try:
-                    _dual_log(logging.INFO, "Closing FTP connection")
                     ftp.quit()
+                    _dual_log(logging.INFO, "Closed FTP connection")
                 except Exception as quit_error:
                     _dual_log(logging.DEBUG, "FTP quit failed: %s", quit_error)
                     try:
                         ftp.close()
+                        _dual_log(logging.DEBUG, "FTP connection closed with close()")
                     except Exception as close_error:
                         _dual_log(logging.DEBUG, "FTP close failed: %s", close_error)
 
