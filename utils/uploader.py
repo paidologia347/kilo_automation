@@ -74,6 +74,7 @@ def upload_file(path: str, max_retries: int = MAX_RETRIES) -> bool:
                 max_attempts,
                 path,
             )
+            print("CONNECTING FTP")
             _dual_log(logging.INFO, "Connecting to FTP host: %s", host)
             with FTP(host, timeout=30) as ftp:
                 _dual_log(logging.INFO, "Logging in to FTP server")
@@ -93,9 +94,11 @@ def upload_file(path: str, max_retries: int = MAX_RETRIES) -> bool:
                 _dual_log(logging.INFO, "Changing working directory to %s", folder_name)
                 ftp.cwd(folder_name)
                 filename = file_path.name
+                print("UPLOADING FILE")
                 _dual_log(logging.INFO, "Uploading file in binary mode: %s", filename)
                 with file_path.open("rb") as stream:
                     ftp.storbinary(f"STOR {filename}", stream)
+                print("UPLOAD SUCCESS")
                 _dual_log(
                     logging.INFO,
                     "Uploaded file to FTP (%s/%s): %s",
