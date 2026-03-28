@@ -10,11 +10,7 @@ MAX_RETRIES = 2
 
 def _dual_log(level: int, message: str, *args: object) -> None:
     logger.log(level, message, *args)
-    try:
-        formatted = message % args if args else message
-    except TypeError as format_error:
-        logger.debug("FTP log formatting failed for '%s': %s", message, format_error)
-        formatted = message
+    formatted = message % args if args else message
     print(f"[uploader] {formatted}")
 
 
@@ -31,6 +27,7 @@ def upload_file(path: str) -> bool:
             "FTP upload skipped: missing FTP_HOST/FTP_USER/FTP_PASS",
         )
         return False
+    filename = os.path.basename(path)
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -59,7 +56,6 @@ def upload_file(path: str) -> bool:
                     _dual_log(logging.INFO, "Remote folder already exists: %s", folder_name)
                 _dual_log(logging.INFO, "Changing working directory to %s", folder_name)
                 ftp.cwd(folder_name)
-                filename = os.path.basename(path)
                 _dual_log(logging.INFO, "Uploading file in binary mode: %s", filename)
                 with open(path, "rb") as stream:
                     ftp.storbinary(f"STOR {filename}", stream)
