@@ -15,7 +15,7 @@ def home():
 
 @app.route("/run")
 def run():
-    threading.Thread(target=run_pipeline).start()
+    threading.Thread(target=run_pipeline, daemon=True).start()
     return jsonify({"status": "pipeline started"})
 
 
