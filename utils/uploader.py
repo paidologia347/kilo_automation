@@ -10,7 +10,10 @@ MAX_RETRIES = 2
 
 def _dual_log(level: int, message: str, *args: object) -> None:
     logger.log(level, message, *args)
-    formatted = message % args if args else message
+    try:
+        formatted = message % args if args else message
+    except (TypeError, ValueError):
+        formatted = message
     print(f"[uploader] {formatted}")
 
 
@@ -36,7 +39,7 @@ def upload_file(path: str) -> bool:
                 max_attempts,
                 path,
             )
-            _dual_log(logging.INFO, "Connecting to FTP host")
+            _dual_log(logging.INFO, "Connecting to FTP host: %s", host)
             with FTP(host, timeout=30) as ftp:
                 _dual_log(logging.INFO, "Logging in to FTP server")
                 ftp.login(user=username, passwd=password)
@@ -65,7 +68,7 @@ def upload_file(path: str) -> bool:
                     filename,
                     path,
                 )
-            _dual_log(logging.INFO, "Closed FTP connection")
+            _dual_log(logging.INFO, "FTP connection closed successfully")
             return True
         except Exception as error:
             if attempt < max_attempts:
