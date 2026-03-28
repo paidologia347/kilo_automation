@@ -12,7 +12,8 @@ def _log_with_print(level: int, message: str, *args: object) -> None:
     logger.log(level, message, *args)
     try:
         formatted = message % args if args else message
-    except TypeError:
+    except TypeError as format_error:
+        logger.debug("FTP log formatting failed for '%s': %s", message, format_error)
         formatted = message
     print(f"[uploader] {formatted}")
 
@@ -95,11 +96,12 @@ def upload_file(path: str) -> bool:
                 try:
                     _log_with_print(logging.INFO, "Closing FTP connection")
                     ftp.quit()
-                except Exception:
+                except Exception as quit_error:
+                    logger.debug("FTP quit failed: %s", quit_error)
                     try:
                         ftp.close()
-                    except Exception:
-                        pass
+                    except Exception as close_error:
+                        logger.debug("FTP close failed: %s", close_error)
 
     return False
 
