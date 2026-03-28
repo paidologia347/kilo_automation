@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -17,7 +18,7 @@ def _setup_logging() -> None:
         )
 
 
-def main() -> None:
+def run_autonomous_loop() -> None:
     _setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("OpenClaw autonomous system starting")
@@ -34,9 +35,7 @@ def main() -> None:
             print(f"[main] Run #{run_number} completed successfully")
         except Exception:
             tb = traceback.format_exc()
-            logger.error(
-                "--- Autonomous run #%s failed ---\n%s", run_number, tb
-            )
+            logger.error("--- Autonomous run #%s failed ---\n%s", run_number, tb)
             print(f"[main] Run #{run_number} failed — see {LOG_FILE} for details")
 
         logger.info(
@@ -47,6 +46,16 @@ def main() -> None:
             f"({SCHEDULE_INTERVAL_SECONDS // 3600}h) before next run"
         )
         time.sleep(SCHEDULE_INTERVAL_SECONDS)
+
+
+def start_autonomous_loop() -> threading.Thread:
+    thread = threading.Thread(target=run_autonomous_loop)
+    thread.start()
+    return thread
+
+
+def main() -> None:
+    start_autonomous_loop()
 
 
 if __name__ == "__main__":
