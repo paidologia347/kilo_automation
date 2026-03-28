@@ -3,7 +3,7 @@ import random
 import time
 from typing import Optional
 
-from config import DELAY_MAX, DELAY_MIN, RETRY
+from config import DELAY_MAX, DELAY_MIN, RETRY, UPLOAD_DELAY_SECONDS, UPLOAD_RETRY_ATTEMPTS
 from queue import task_queue
 from utils.browser import generate_image
 from utils.metadata import inject_metadata
@@ -38,8 +38,18 @@ def process_prompt(prompt: str) -> bool:
         logger.info("Step 3/4: injecting metadata")
         final_path = inject_metadata(upscaled_path, prompt)
         logger.info("Step 3/4 complete: metadata injected into %s", final_path)
+        delay_seconds = UPLOAD_DELAY_SECONDS
+        if delay_seconds < 0:
+            logger.warning(
+                "UPLOAD_DELAY_SECONDS was negative (%s); treating as 0",
+                delay_seconds,
+            )
+            delay_seconds = 0
+        if delay_seconds > 0:
+            logger.info("Step 4/4: waiting %s seconds before upload", delay_seconds)
+            time.sleep(delay_seconds)
         logger.info("Step 4/4: uploading file")
-        uploaded = upload_file(final_path)
+        uploaded = upload_file(final_path, max_retries=UPLOAD_RETRY_ATTEMPTS)
         if not uploaded:
             logger.error("Step 4/4 failed uploading %s", final_path)
             logger.error("Prompt failed: %s", prompt)
