@@ -1,152 +1,104 @@
 import json
 import logging
+import os
+import random
 import time
 from pathlib import Path
+from uuid import uuid4
 
 from playwright.sync_api import sync_playwright
 
 
 logger = logging.getLogger(__name__)
 
-# Viewport dimensions used for the screenshot
-_VIEWPORT_WIDTH = 1024
-_VIEWPORT_HEIGHT = 1024
+IMAGE_GENERATOR_URL = os.getenv("IMAGE_GENERATOR_URL", "https://example.com/")
+PROMPT_INPUT_SELECTOR = os.getenv("PROMPT_INPUT_SELECTOR", "textarea[name='prompt']")
+GENERATE_BUTTON_SELECTOR = os.getenv(
+    "GENERATE_BUTTON_SELECTOR",
+    "button:has-text('Generate')",
+)
+GENERATED_IMAGE_SELECTOR = os.getenv("GENERATED_IMAGE_SELECTOR", "img.generated-image")
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/output")
+MAX_RETRIES = 2
+TIMEOUT_MS = 60_000
 
 
-def _build_html(prompt: str) -> str:
-    """Return a self-contained HTML page that renders *prompt* for screenshotting."""
-    escaped = (
-        prompt
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width={_VIEWPORT_WIDTH}, initial-scale=1.0" />
-  <title>Generated Image</title>
-  <style>
-    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    html, body {{
-      width: {_VIEWPORT_WIDTH}px;
-      height: {_VIEWPORT_HEIGHT}px;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    }}
-    .card {{
-      width: 880px;
-      padding: 60px 64px;
-      background: rgba(255, 255, 255, 0.07);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 24px;
-      backdrop-filter: blur(12px);
-      box-shadow: 0 32px 64px rgba(0, 0, 0, 0.5);
-    }}
-    .label {{
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: rgba(255, 255, 255, 0.45);
-      margin-bottom: 24px;
-    }}
-    .prompt {{
-      font-size: 28px;
-      font-weight: 400;
-      line-height: 1.55;
-      color: #f0f4ff;
-      word-break: break-word;
-    }}
-    .footer {{
-      margin-top: 48px;
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.25);
-      letter-spacing: 0.06em;
-    }}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <p class="label">Generated prompt</p>
-    <p class="prompt">{escaped}</p>
-    <p class="footer">Rendered by browser automation pipeline</p>
-  </div>
-</body>
-</html>"""
+def _load_cookies(context) -> None:
+    cookies_path = Path("cookies.json")
+    if not cookies_path.exists():
+        print("[browser] cookies.json not found, skipping cookie load")
+        return
+
+    try:
+        cookies = json.loads(cookies_path.read_text(encoding="utf-8"))
+        if isinstance(cookies, list):
+            context.add_cookies(cookies)
+            print(f"[browser] loaded {len(cookies)} cookie(s) from cookies.json")
+    except Exception as error:
+        print(f"[browser] failed loading cookies.json: {error}")
+
+
+def generate_image(prompt: str) -> str:
+    """Generate an image for *prompt* using a Playwright browser session."""
+    output_dir = Path(OUTPUT_DIR)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for attempt in range(1, MAX_RETRIES + 2):
+        print(f"[browser] starting generation attempt {attempt}/{MAX_RETRIES + 1}")
+        try:
+            output_path = output_dir / f"generated_{uuid4().hex}.png"
+
+            with sync_playwright() as playwright:
+                print("[browser] launching headless Chromium")
+                browser = playwright.chromium.launch(headless=True)
+                context = browser.new_context(accept_downloads=True)
+                _load_cookies(context)
+
+                page = context.new_page()
+                print(f"[browser] opening generator website: {IMAGE_GENERATOR_URL}")
+                page.goto(IMAGE_GENERATOR_URL, wait_until="networkidle", timeout=TIMEOUT_MS)
+
+                print(f"[browser] filling prompt input: {PROMPT_INPUT_SELECTOR}")
+                page.fill(PROMPT_INPUT_SELECTOR, prompt, timeout=TIMEOUT_MS)
+
+                print(f"[browser] clicking generate button: {GENERATE_BUTTON_SELECTOR}")
+                page.click(GENERATE_BUTTON_SELECTOR, timeout=TIMEOUT_MS)
+
+                delay = random.uniform(5, 10)
+                print(f"[browser] waiting random delay: {delay:.2f}s")
+                time.sleep(delay)
+
+                print(f"[browser] waiting for generated image: {GENERATED_IMAGE_SELECTOR}")
+                image = page.locator(GENERATED_IMAGE_SELECTOR).first
+                image.wait_for(state="visible", timeout=TIMEOUT_MS)
+
+                print(f"[browser] saving generated image to {output_path}")
+                image_bytes = image.screenshot()
+                output_path.write_bytes(image_bytes)
+
+                context.close()
+                browser.close()
+
+            logger.info("Image generated for prompt %r: %s", prompt, output_path)
+            print(f"[browser] generation complete: {output_path}")
+            return str(output_path)
+        except Exception as error:
+            logger.exception("Image generation attempt %s failed: %s", attempt, error)
+            print(f"[browser] attempt {attempt} failed: {error}")
+            if attempt > MAX_RETRIES:
+                raise
+
+    raise RuntimeError("Image generation failed after all retry attempts")
 
 
 def generate(prompt: str) -> dict:
-    """Render *prompt* in a headless Chromium browser and save a screenshot.
-
-    Returns a dict with keys:
-        ``image_path``  – absolute-ish path to the saved JPEG file (str)
-        ``prompt``      – the original prompt string
-        ``width``       – screenshot width in pixels
-        ``height``      – screenshot height in pixels
-        ``render_time`` – wall-clock seconds spent inside Playwright (float)
-    """
-    try:
-        output_dir = Path("outputs")
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        safe_name = abs(hash(prompt))
-        output_path = output_dir / f"output_{safe_name}.jpg"
-
-        html_content = _build_html(prompt)
-
-        render_start = time.monotonic()
-
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
-            context = browser.new_context(
-                viewport={"width": _VIEWPORT_WIDTH, "height": _VIEWPORT_HEIGHT},
-            )
-
-            cookies_path = Path("cookies.json")
-            if cookies_path.exists():
-                try:
-                    cookies = json.loads(cookies_path.read_text(encoding="utf-8"))
-                    if isinstance(cookies, list):
-                        context.add_cookies(cookies)
-                        logger.info("Loaded %d cookie(s) from cookies.json", len(cookies))
-                except Exception as cookie_error:
-                    logger.warning("Failed loading cookies.json: %s", cookie_error)
-
-            page = context.new_page()
-
-            # Load the rendered HTML directly — no network round-trip needed.
-            page.set_content(html_content, wait_until="networkidle")
-
-            # Capture a full-page screenshot as JPEG.
-            page.screenshot(
-                path=str(output_path),
-                type="jpeg",
-                quality=95,
-                full_page=False,
-            )
-
-            context.close()
-            browser.close()
-
-        render_time = time.monotonic() - render_start
-
-        logger.info(
-            "Image generated in %.2fs: %s", render_time, output_path
-        )
-
-        return {
-            "image_path": str(output_path),
-            "prompt": prompt,
-            "width": _VIEWPORT_WIDTH,
-            "height": _VIEWPORT_HEIGHT,
-            "render_time": render_time,
-        }
-    except Exception as error:
-        logger.exception("Failed generating image for prompt %r: %s", prompt, error)
-        raise
+    """Backward-compatible wrapper used by older call sites."""
+    start = time.monotonic()
+    image_path = generate_image(prompt)
+    return {
+        "image_path": image_path,
+        "prompt": prompt,
+        "width": None,
+        "height": None,
+        "render_time": time.monotonic() - start,
+    }
