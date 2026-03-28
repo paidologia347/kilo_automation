@@ -25,9 +25,13 @@ def upload_file(path: str) -> bool:
                 ftp.login(user=username, passwd=password)
                 try:
                     ftp.mkd(folder_name)
-                except error_perm:
-                    # Folder may already exist on the remote server.
-                    pass
+                except error_perm as folder_error:
+                    message = str(folder_error).lower()
+                    folder_exists_error = message.startswith("550") and (
+                        "exist" in message or "already" in message
+                    )
+                    if not folder_exists_error:
+                        raise
                 ftp.cwd(folder_name)
                 with open(path, "rb") as stream:
                     ftp.storbinary(f"STOR {os.path.basename(path)}", stream)

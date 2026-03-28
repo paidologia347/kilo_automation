@@ -30,7 +30,17 @@ def process_prompt(prompt):
             logger.info("Step 4/4: uploading file")
             uploaded = upload_file(final_path)
             if not uploaded:
-                raise RuntimeError(f"Upload failed for {final_path}")
+                if attempt < max_attempts:
+                    logger.warning(
+                        "Step 4/4 failed uploading %s (attempt %s/%s)",
+                        final_path,
+                        attempt,
+                        max_attempts,
+                    )
+                    continue
+                logger.error("Step 4/4 failed uploading %s", final_path)
+                logger.error("Final result: pipeline failed for prompt: %s", prompt)
+                return False
             logger.info("Step 4/4 complete: uploaded %s", final_path)
             logger.info("Final result: pipeline complete for prompt: %s", prompt)
             return True
