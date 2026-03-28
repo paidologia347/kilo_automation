@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 2
 
 
-def _log_with_print(level: int, message: str, *args: object) -> None:
+def _dual_log(level: int, message: str, *args: object) -> None:
     logger.log(level, message, *args)
     try:
         formatted = message % args if args else message
@@ -26,7 +26,7 @@ def upload_file(path: str) -> bool:
     max_attempts = MAX_RETRIES + 1
 
     if not host or not username or not password:
-        _log_with_print(
+        _dual_log(
             logging.ERROR,
             "FTP upload skipped: missing FTP_HOST/FTP_USER/FTP_PASS",
         )
@@ -35,21 +35,21 @@ def upload_file(path: str) -> bool:
     for attempt in range(1, max_attempts + 1):
         ftp = None
         try:
-            _log_with_print(
+            _dual_log(
                 logging.INFO,
                 "FTP upload attempt %s/%s for %s",
                 attempt,
                 max_attempts,
                 path,
             )
-            _log_with_print(logging.INFO, "Connecting to FTP host")
+            _dual_log(logging.INFO, "Connecting to FTP host")
             ftp = FTP(host, timeout=30)
-            _log_with_print(logging.INFO, "Logging in to FTP server")
+            _dual_log(logging.INFO, "Logging in to FTP server")
             ftp.login(user=username, passwd=password)
-            _log_with_print(logging.INFO, "Ensuring remote folder exists: %s", folder_name)
+            _dual_log(logging.INFO, "Ensuring remote folder exists: %s", folder_name)
             try:
                 ftp.mkd(folder_name)
-                _log_with_print(logging.INFO, "Created remote folder: %s", folder_name)
+                _dual_log(logging.INFO, "Created remote folder: %s", folder_name)
             except error_perm as folder_error:
                 message = str(folder_error).lower()
                 folder_exists_error = message.startswith("550") and (
@@ -57,14 +57,14 @@ def upload_file(path: str) -> bool:
                 )
                 if not folder_exists_error:
                     raise
-                _log_with_print(logging.INFO, "Remote folder already exists: %s", folder_name)
-            _log_with_print(logging.INFO, "Changing working directory to %s", folder_name)
+                _dual_log(logging.INFO, "Remote folder already exists: %s", folder_name)
+            _dual_log(logging.INFO, "Changing working directory to %s", folder_name)
             ftp.cwd(folder_name)
             filename = os.path.basename(path)
-            _log_with_print(logging.INFO, "Uploading file in binary mode: %s", filename)
+            _dual_log(logging.INFO, "Uploading file in binary mode: %s", filename)
             with open(path, "rb") as stream:
                 ftp.storbinary(f"STOR {filename}", stream)
-            _log_with_print(
+            _dual_log(
                 logging.INFO,
                 "Uploaded file to FTP (%s/%s): %s",
                 folder_name,
@@ -74,7 +74,7 @@ def upload_file(path: str) -> bool:
             return True
         except Exception as error:
             if attempt < max_attempts:
-                _log_with_print(
+                _dual_log(
                     logging.WARNING,
                     "FTP upload failed for %s (attempt %s/%s): %s",
                     path,
@@ -83,7 +83,7 @@ def upload_file(path: str) -> bool:
                     error,
                 )
             else:
-                _log_with_print(
+                _dual_log(
                     logging.ERROR,
                     "FTP upload permanently failed for %s after %s attempts: %s",
                     path,
@@ -94,14 +94,14 @@ def upload_file(path: str) -> bool:
         finally:
             if ftp is not None:
                 try:
-                    _log_with_print(logging.INFO, "Closing FTP connection")
+                    _dual_log(logging.INFO, "Closing FTP connection")
                     ftp.quit()
                 except Exception as quit_error:
-                    logger.debug("FTP quit failed: %s", quit_error)
+                    _dual_log(logging.DEBUG, "FTP quit failed: %s", quit_error)
                     try:
                         ftp.close()
                     except Exception as close_error:
-                        logger.debug("FTP close failed: %s", close_error)
+                        _dual_log(logging.DEBUG, "FTP close failed: %s", close_error)
 
     return False
 
